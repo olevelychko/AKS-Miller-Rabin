@@ -24,5 +24,5 @@ independent rounds in Miller-Rabin by changing the value “k” inside the Mill
 
 ### AKS
 AKS algorithm can be launched by stating “AKS(randomNumb);”. It can use two different functions for polynomial multiplication: multiplyModPoly() (just usual multiplication
-with modular reduction, quite slow) and binarySegmentation() (more efficient method, but can work only with number size less than 156 bits). Switching between these two functions
+with modular reduction, quite slow) and binarySegmentation() (more efficient method, but can work only with number size less than 152 bits). Switching between these two functions
 happens in “selectingMultiplyMethod()”, but you can choose one specific function if you wish.
