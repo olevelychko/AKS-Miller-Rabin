@@ -41,9 +41,9 @@ public class PrimalityTesting {
         double threePowLog = Math.pow(log2n, 3);
         BigInteger maxR = BigInteger.valueOf((long) Math.ceil(threePowLog));
         BigInteger maxLog = BigInteger.valueOf((long) Math.ceil(twoPowLog));
-        if (maxR.compareTo(BigInteger.valueOf(3)) < 0) return BigInteger.valueOf(3);
+        BigInteger r = BigInteger.valueOf(3);
         boolean goodOrd;
-        for (BigInteger r = BigInteger.TWO; r.compareTo(maxR) < 1; r = r.add(BigInteger.ONE)) {
+        for (; r.compareTo(maxR) < 1; r = r.add(BigInteger.ONE)) {
             if ((r.gcd(n).equals(BigInteger.ONE))) {
                 goodOrd = true;
                 for (BigInteger i = BigInteger.ONE; i.compareTo(maxLog) < 1; i = i.add(BigInteger.ONE)) {
@@ -55,18 +55,18 @@ public class PrimalityTesting {
                 if (goodOrd) return r;
             }
         }
-        return BigInteger.ZERO;
+        return r;
     }
 
 
     private static HashMap<BigInteger, BigInteger> multiplyModPoly(HashMap<BigInteger, BigInteger> polyA, HashMap<BigInteger, BigInteger> polyB, BigInteger r, BigInteger n) {
         HashMap<BigInteger, BigInteger> prod = new HashMap<>();
-        for (var f : polyA.entrySet()) {
-            for (var g : polyB.entrySet()) {
-                BigInteger deg = f.getKey().add(g.getKey()).mod(r);
-                BigInteger coeff = f.getValue().multiply(g.getValue()).mod(n);
+        for (var a : polyA.entrySet()) {
+            for (var b : polyB.entrySet()) {
+                BigInteger deg = a.getKey().add(b.getKey()).mod(r);
+                BigInteger coeff = a.getValue().multiply(b.getValue()).mod(n);
                 if (!coeff.equals(BigInteger.ZERO)) {
-                    prod.put(deg, prod.getOrDefault(deg, BigInteger.ZERO).add(coeff).mod(n));
+                    prod.merge(deg, coeff, (oldCoeff, newCoeff) -> oldCoeff.add(newCoeff).mod(n));
                 }
             }
         }
@@ -74,52 +74,18 @@ public class PrimalityTesting {
     }
 
 
-    private static HashMap<BigInteger, BigInteger> selectingMultiplyMethod(HashMap<BigInteger, BigInteger> polyA, HashMap<BigInteger, BigInteger> polyB, BigInteger r, BigInteger n){
-        if(n.bitLength() > 156) return multiplyModPoly(polyA, polyB, r, n);
-          else
-            return binarySegmentation(polyA, polyB, r, n);
-    }
-
-
-    private static HashMap<BigInteger, BigInteger> polyFastExp(HashMap<BigInteger, BigInteger> base, BigInteger r, BigInteger n) {
-        BigInteger exp = n;
-        HashMap<BigInteger, BigInteger> result = new HashMap<>();
-        result.put(BigInteger.ZERO, BigInteger.ONE);
-        HashMap<BigInteger, BigInteger> basePoly = new HashMap<>(base);
-        while (exp.signum() > 0) {
-            if (exp.testBit(0)) result = selectingMultiplyMethod(result, basePoly, r, n);
-            exp = exp.shiftRight(1);
-            if (exp.signum() > 0) basePoly = selectingMultiplyMethod(basePoly, basePoly, r, n);
-        }
-        result.entrySet().removeIf(entry -> entry.getValue().equals(BigInteger.ZERO));
-        return result;
-    }
-
-
     private static HashMap<BigInteger, BigInteger> binarySegmentation(HashMap<BigInteger, BigInteger> polyA, HashMap<BigInteger, BigInteger> polyB, BigInteger r, BigInteger n) {
         BigInteger maxA = polyA.keySet().stream().reduce(BigInteger.ZERO, BigInteger::max).add(BigInteger.ONE);
         BigInteger maxB = polyB.keySet().stream().reduce(BigInteger.ZERO, BigInteger::max).add(BigInteger.ONE);
-        BigInteger maxCoefA = polyA.values().stream().map(BigInteger::abs).max(BigInteger::compareTo).orElse(BigInteger.ZERO);
-        BigInteger maxCoefB = polyB.values().stream().map(BigInteger::abs).max(BigInteger::compareTo).orElse(BigInteger.ZERO);
+        BigInteger maxCoefA = polyA.values().stream().reduce(BigInteger.ZERO, BigInteger::max);
+        BigInteger maxCoefB = polyB.values().stream().reduce(BigInteger.ZERO, BigInteger::max);
         BigInteger bound = (maxA.max(maxB)).multiply(maxCoefA).multiply(maxCoefB);
-        int intBound = bound.bitLength() + 1;
+        int intBound = bound.bitLength();
+        BigInteger maxDeg = maxA.add(maxB).subtract(BigInteger.TWO);
         BigInteger A = numbFromPoly(polyA, intBound);
         BigInteger B = numbFromPoly(polyB, intBound);
         BigInteger C = A.multiply(B);
-        BigInteger bitMask = BigInteger.ONE.shiftLeft(intBound).subtract(BigInteger.ONE);
-        HashMap<BigInteger, BigInteger> c = new HashMap<>();
-        BigInteger maxDeg = maxA.add(maxB).subtract(BigInteger.ONE);
-        for (BigInteger i = BigInteger.ZERO; i.compareTo(maxDeg) < 0; i = i.add(BigInteger.ONE)) {
-            BigInteger shift = i.multiply(BigInteger.valueOf(intBound));
-            if (shift.bitLength() > 31)
-                throw new IllegalArgumentException("Exponent is too large for binary segmentation");
-            BigInteger cCoeff = C.shiftRight(shift.intValueExact()).and(bitMask).mod(n);
-            if (!cCoeff.equals(BigInteger.ZERO)) {
-                BigInteger exp = i.mod(r);
-                c.merge(exp, cCoeff, (aCoeff, bCoeff) -> aCoeff.add(bCoeff).mod(n));
-            }
-        }
-        return c;
+        return polyFromNumb(C, intBound, maxDeg, r, n);
     }
 
 
@@ -128,11 +94,46 @@ public class PrimalityTesting {
         for (Map.Entry<BigInteger, BigInteger> entry : x.entrySet()) {
             BigInteger degX = entry.getKey();
             BigInteger shift = degX.multiply(BigInteger.valueOf(intBound));
-            if (shift.bitLength() > 31)
-                throw new IllegalArgumentException("Exponent is too large for binary segmentation");
             X = X.add(entry.getValue().shiftLeft(shift.intValueExact()));
         }
         return X;
+    }
+
+
+    private static HashMap<BigInteger, BigInteger> polyFromNumb(BigInteger X, int intBound, BigInteger maxDeg, BigInteger r, BigInteger n) {
+        BigInteger bitMask = BigInteger.ONE.shiftLeft(intBound).subtract(BigInteger.ONE);
+        HashMap<BigInteger, BigInteger> x = new HashMap<>();
+        for (BigInteger i = BigInteger.ZERO; i.compareTo(maxDeg) <= 0; i = i.add(BigInteger.ONE)) {
+            BigInteger shift = i.multiply(BigInteger.valueOf(intBound));
+            BigInteger cCoeff = X.shiftRight(shift.intValueExact()).and(bitMask).mod(n);
+            if (!cCoeff.equals(BigInteger.ZERO)) {
+                BigInteger exp = i.mod(r);
+                x.merge(exp, cCoeff, (aCoeff, bCoeff) -> aCoeff.add(bCoeff).mod(n));
+            }
+        }
+        return x;
+    }
+
+
+    private static HashMap<BigInteger, BigInteger> selectingMultiplyMethod(int boundForMultMethod, HashMap<BigInteger, BigInteger> polyA, HashMap<BigInteger, BigInteger> polyB, BigInteger r, BigInteger n) {
+        if (boundForMultMethod > 31) return multiplyModPoly(polyA, polyB, r, n);
+        else
+            return binarySegmentation(polyA, polyB, r, n);
+    }
+
+
+    private static HashMap<BigInteger, BigInteger> polyFastExp(int boundForMultMethod, HashMap<BigInteger, BigInteger> base, BigInteger r, BigInteger n) {
+        BigInteger exp = n;
+        HashMap<BigInteger, BigInteger> result = new HashMap<>();
+        result.put(BigInteger.ZERO, BigInteger.ONE);
+        HashMap<BigInteger, BigInteger> basePoly = new HashMap<>(base);
+        while (exp.signum() > 0) {
+            if (exp.testBit(0)) result = selectingMultiplyMethod(boundForMultMethod, result, basePoly, r, n);
+            exp = exp.shiftRight(1);
+            if (exp.signum() > 0) basePoly = selectingMultiplyMethod(boundForMultMethod, basePoly, basePoly, r, n);
+        }
+        result.entrySet().removeIf(entry -> entry.getValue().equals(BigInteger.ZERO));
+        return result;
     }
 
 
@@ -143,10 +144,14 @@ public class PrimalityTesting {
         HashMap<BigInteger, BigInteger> Xrhs = new HashMap<>();
         HashMap<BigInteger, BigInteger> Xlhs;
         Xrhs.put(n.mod(r), BigInteger.ONE);
+        BigInteger bound = r.multiply(n).multiply(n);
+        int intBound = bound.bitLength();
+        BigInteger maxDeg = r.multiply(BigInteger.TWO);
+        int boundForMultMethod = maxDeg.multiply(BigInteger.valueOf(intBound)).bitLength();
         for (BigInteger a = BigInteger.ONE; a.compareTo(r.sqrt().multiply(BigInteger.valueOf(logN))) < 0; a = a.add(BigInteger.ONE)) {
             Xrhs.put(BigInteger.ZERO, a); //X^n+a
             baseX.put(BigInteger.ZERO, a); //X+a
-            Xlhs = polyFastExp(baseX, r, n); //(X+a)^n
+            Xlhs = polyFastExp(boundForMultMethod, baseX, r, n); //(X+a)^n
             if (!Xlhs.equals(Xrhs)) return false;
         }
         return true;
@@ -184,12 +189,13 @@ public class PrimalityTesting {
 
     private static boolean MillerRabin(BigInteger n) {
         System.out.println("Miller-Rabin algorithm");
+        System.out.println(n);
         if (n.remainder(BigInteger.TWO).equals(BigInteger.ZERO) && n.compareTo(BigInteger.TWO) > 0) {
             System.out.println(n + " is composite");
             return false;
         }
         int s = 0;
-        int k = 1;
+        int k = 5;
         BigInteger x;
         BigInteger d = n.subtract(BigInteger.ONE);
         while ((d.remainder(BigInteger.TWO)).equals(BigInteger.ZERO) && !d.equals(BigInteger.ZERO)) {
@@ -224,34 +230,26 @@ public class PrimalityTesting {
 
 
     public static void main(String[] args) throws Exception {
-       int bitLength = 36;
+        int bitLength = 8;
 
-        SecureRandom random = new SecureRandom();
-        BigInteger randomNumb = new BigInteger(bitLength, random);
-        randomNumb = randomNumb.setBit(bitLength - 1);
-        System.out.println("The random number = " + randomNumb);
-        long start0 = System.nanoTime();
-        System.out.println(MillerRabin(randomNumb));
-        long end0 = System.nanoTime();
-        long duration0 = end0 - start0;
-        System.out.printf(Locale.US, "Execution time of Miller-Rabin: %.2f ms%n", duration0 / 1_000_000.0);
-        System.out.println();
-        long start1 = System.nanoTime();
-        System.out.println(AKS(randomNumb));
-        long end1 = System.nanoTime();
-        long duration1 = end1 - start1;
-        System.out.printf(Locale.US, "Execution time of AKS: %.2f ms%n", +duration1 / 1_000_000.0);
-
+        for (int i = 0; i < 20; i++) {
+            SecureRandom random = new SecureRandom();
+            BigInteger randomNumb = new BigInteger(bitLength, random);
+            randomNumb = randomNumb.setBit(bitLength - 1);
+            System.out.println("The random number = " + randomNumb);
+            long start0 = System.nanoTime();
+            System.out.println(MillerRabin(randomNumb));
+            long end0 = System.nanoTime();
+            long duration0 = end0 - start0;
+            System.out.printf(Locale.US, "Execution time of Miller-Rabin: %.2f ms%n", duration0 / 1_000_000.0);
+            System.out.println();
+            long start1 = System.nanoTime();
+            System.out.println(AKS(randomNumb));
+            long end1 = System.nanoTime();
+            long duration1 = end1 - start1;
+            System.out.printf(Locale.US, "Execution time of AKS: %.2f ms%n", +duration1 / 1_000_000.0);
+            System.out.println("__________________________________________________________");
+            System.out.println();
+        }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
